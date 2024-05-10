@@ -1,0 +1,58 @@
+type var = string
+
+type exp =
+  | INT of int
+  | VAR of var
+  | ADD of exp * exp
+  | MUL of exp * exp
+
+type phi = EQ of exp * exp
+
+type lib = var * var list * var * phi
+
+type pgm = var list * lib list * var
+
+type spec = int list * int
+
+let rec eval_exp (env : (var * int) list) exp =
+  match exp with
+  | INT n -> n
+  | VAR x -> List.assoc x env
+  | ADD (e1, e2) -> (eval_exp env e1) + (eval_exp env e2)
+  | MUL (e1, e2) -> (eval_exp env e1) * (eval_exp env e2)
+
+let eval_phi env (EQ (e1, e2)) =
+  let v1 = eval_exp env e1 in
+  let v2 = eval_exp env e2 in
+  v1 = v2
+
+let rec synthesize (libs : lib list) (spec : spec) =
+  let inputs_val, output_val = spec in
+  let input_var = "x" in
+  let rec try_synthesize libs used_libs pgm =
+    match libs with
+    | [] ->
+        let inputs, used_libs, output_var = pgm in
+        let env = List.combine [input_var] inputs_val in
+        let output_val' = eval_exp env (VAR output_var) in
+        if output_val' = output_val then Some pgm else None
+    | (f_name, args, out, phi) :: remaining_libs ->
+        let args_vals =
+          List.map
+            (fun arg ->
+              match List.assoc_opt arg env with
+              | Some v -> v
+              | None ->
+                  let new_var = Printf.sprintf "t%d" (List.length used_libs) in
+                  env <- (new_var, 0) :: env;
+                  new_var)
+            args
+        in
+        let env' = (out, 0) :: env in
+        if eval_phi env' phi then
+          let pgm' = [input_var], used_libs @ [(f_name, args_vals, out, phi)], out in
+          try_synthesize remaining_libs pgm' pgm'
+        else
+          try_synthesize remaining_libs used_libs pgm
+  in
+  try_synthesize libs [] ([], [], "")
